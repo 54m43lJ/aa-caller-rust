@@ -1,5 +1,0 @@
-/media/MAIN/Work_linux/aa-caller/target/debug/deps/libstrsim-f41340848a7a391f.rmeta: /home/john/.cargo/registry/src/index.crates.io-6f17d22bba15001f/strsim-0.11.0/src/lib.rs
-
-/media/MAIN/Work_linux/aa-caller/target/debug/deps/strsim-f41340848a7a391f.d: /home/john/.cargo/registry/src/index.crates.io-6f17d22bba15001f/strsim-0.11.0/src/lib.rs
-
-/home/john/.cargo/registry/src/index.crates.io-6f17d22bba15001f/strsim-0.11.0/src/lib.rs:
