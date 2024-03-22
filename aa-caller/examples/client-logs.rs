@@ -34,9 +34,9 @@ async fn main() -> Result<(), Box<dyn Error>> {
             }
             Ok(n) => {
                 println!("{} bytes of logs received", n);
-                let out = String::from_utf8(buf[..n].to_vec()).unwrap();
+                buf.truncate(n);
+                let out = String::from_utf8(buf).unwrap();
                 println!("{}", out);
-                break;
             }
             Err(_e) => {
                 continue;
