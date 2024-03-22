@@ -6,9 +6,9 @@ use clap::Parser;
 #[derive(Parser)]
 #[command(version,about)]
 struct Opts {
-    #[arg(short, long)]
+    #[arg(short, long, help="launch aa-caller in the background")]
     daemon :bool,
-    #[arg(long="logs")]
+    #[arg(short, help="print all available kernel logs")]
     logs :bool
 }
 
@@ -74,7 +74,10 @@ async fn process(stream: &UnixStream) -> Result<(), Box<dyn Error>> {
                 "logs" => {
                     println!("logs requested");
                     for l in LOG_FILES {
-                        let log = get_logs(&l).unwrap();
+                        let log = match get_logs(&l) {
+                            Ok(res) => { res }
+                            Err(_e) => { continue; }
+                        };
                         stream_write(stream, &log[..]).await?;
                     }
                 }
@@ -100,13 +103,11 @@ async fn stream_write(stream :&UnixStream, content :&[u8]) -> Result<(), Box<dyn
     stream.writable().await?;
     loop {
         match stream.try_write(content) {
-            Ok(_n) => {
-            println!("sent {} bytes of data :\n {}", _n, String::from_utf8(content.to_vec()).unwrap());
+            Ok(n) => {
+            println!("sent {} bytes of data :\n {}", n, String::from_utf8(content.to_vec()).unwrap());
                 break;
             }
-            Err(_e) => {
-                continue;
-            }
+            Err(_e) => { continue; }
         }
     }
     Ok(())
