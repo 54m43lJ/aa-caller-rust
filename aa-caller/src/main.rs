@@ -13,6 +13,7 @@ struct Opts {
 }
 
 static LOG_FILES:[&str; 1] = ["/var/log/audit/audit.log"];
+// static LOG_FILES:[&str; 1] = ["/tmp/test.log"];
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn Error>> {
@@ -74,6 +75,7 @@ async fn process(stream: &UnixStream) -> Result<(), Box<dyn Error>> {
                     println!("logs requested");
                     for l in LOG_FILES {
                         let log = get_logs(&l).unwrap();
+                         println!("Log:\n {}", String::from_utf8(log[..].to_vec()).unwrap());
                         stream_write(stream, &log[..]).await?;
                     }
                 }
