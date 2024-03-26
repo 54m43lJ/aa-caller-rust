@@ -1,30 +1,97 @@
-use std::{error::Error, fs::{self, File}, io::Read, path::Path, u8};
-
+use std::{error::Error, fs, path::Path, u8};
+use caller::Caller;
+use server::Server;
 use tokio::net::{UnixListener, UnixStream};
-use clap::Parser;
+use clap::{Parser, Subcommand};
+use common::{Call, Handler, ProfStatus, ProfileOp};
+
+mod caller;
+mod server;
+mod common;
 
 #[derive(Parser)]
 #[command(version,about)]
 struct Opts {
-    #[arg(short, long, help="launch aa-caller in the background")]
-    daemon :bool,
-    #[arg(short, help="print all available kernel logs")]
-    logs :bool
+
+    /// profile operations
+    #[arg(index=1, requires="prof_opts")]
+    profile :Option<String>,
+    #[arg(short='L', group="prof_opts")]
+    prof_load :bool,
+    #[arg(short='d', group="prof_opts")]
+    prof_disable:bool,
+    #[arg(short='t', value_enum, group="prof_opts")]
+    prof_status :Option<ProfStatus>,
+
+    /// common options
+    #[arg(short, exclusive=true, help="print all available kernel logs")]
+    // logs :Option<Vec<PathBuf>>,
+    logs :bool,
+    #[arg(short, exclusive=true, help="get_status")]
+    status :bool,
+    #[arg(short, exclusive=true, help="get_unconfined")]
+    unconfined :bool,
+
+    #[command(subcommand)]
+    action :Option<Action>
 }
 
-static LOG_FILES:[&str; 1] = ["/var/log/audit/audit.log"];
-// static LOG_FILES:[&str; 1] = ["/tmp/test.log"];
+#[derive(Subcommand)]
+enum Action {
+    Daemon,
+    Logs
+}
+
+static LOG_FILES :[&str; 1] = ["/var/log/audit/audit.log"];
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn Error>> {
     let opts = Opts::parse();
-    if opts.logs {
-        for l in LOG_FILES {
-            println!("{}", String::from_utf8(get_logs(l).unwrap()).unwrap());
-        }
-    } else if opts.daemon {
+    // let Server handle it
+    if let Some(action) = opts.action {
+        // does nothing by default
+        let mut server = Server{ call :Call::None};
+        match action {
+            Action::Daemon => {
+                server.call = Call::Daemon;
+            }
+            Action::Logs => {
+                server.call = Call::Logs;
+            }
+        };
+        server.handle()?;
+    // let Caller handle it
     } else {
-        listen().await?;
+        // does nothing by default
+        let mut caller = Caller{ call :Call::None };
+        if opts.logs {
+            caller.call = Call::Logs;
+        } else if let Some(profile) = opts.profile {
+            if opts.prof_load {
+                caller.call = Call::Profile(ProfileOp::Load(profile));
+            } else if opts.prof_disable {
+                caller.call = Call::Profile(ProfileOp::Disable(profile));
+            } else if let Some(status) = opts.prof_status {
+                match status {
+                    ProfStatus::Audit => {
+                        caller.call = Call::Profile(ProfileOp::Status(profile, ProfStatus::Audit));
+                    }
+                    ProfStatus::Complain => {
+                        caller.call = Call::Profile(ProfileOp::Status(profile, ProfStatus::Complain));
+                    }
+                    ProfStatus::Disabled => {
+                        caller.call = Call::Profile(ProfileOp::Status(profile, ProfStatus::Disabled));
+                    }
+                    ProfStatus::Enforce => {
+                        caller.call = Call::Profile(ProfileOp::Status(profile, ProfStatus::Enforce));
+                    }
+                }
+            }
+        // or just listen
+        } else {
+            listen().await?;
+        }
+        caller.handle()?;
     }
     Ok(())
 }
@@ -73,13 +140,12 @@ async fn process(stream: &UnixStream) -> Result<(), Box<dyn Error>> {
             match req.as_str() {
                 "logs" => {
                     println!("logs requested");
-                    for l in LOG_FILES {
-                        let log = match get_logs(&l) {
-                            Ok(res) => { res }
-                            Err(_e) => { continue; }
-                        };
-                        stream_write(stream, &log[..]).await?;
-                    }
+                    match get_logs(&LOG_FILES) {
+                        Ok(log) => { 
+                            stream_write(stream, &log[..]).await?;
+                            }
+                        Err(_e) => { stream_write(stream, "FAILED".as_bytes()).await? }
+                    };
                 }
                 _ => {}
             }
@@ -90,12 +156,15 @@ async fn process(stream: &UnixStream) -> Result<(), Box<dyn Error>> {
 }
 
 /// fetch logs from a kernel log file
-fn get_logs(fname :&str) -> Result<Vec<u8>, Box<dyn Error>> {
-    let mut log = File::open(fname)?;
-    let mut buf :Vec<u8> = Vec::new();
-    let n = log.read_to_end(&mut buf)?;
-    buf.truncate(n);
-    Ok(buf)
+fn get_logs(files :&[&str]) -> Result<Vec<u8>, Box<dyn Error>> {
+    let mut output :Vec<u8> = Vec::new();
+    for f in files {
+        // let path = PathBuf::try_from(f)?;
+        // let mut buf = read_from_file(path)?;
+        let mut buf = fs::read(f)?;
+        output.append(&mut buf);
+    }
+    Ok(output)
 }
 
 /// write any slice of byte string to the stream
@@ -113,7 +182,7 @@ async fn stream_write(stream :&UnixStream, content :&[u8]) -> Result<(), Box<dyn
     Ok(())
 }
 
-async fn _debug_stream(stream: UnixStream) -> Result<(), Box<dyn Error>> {
+async fn _debug_stream(stream: &UnixStream) -> Result<(), Box<dyn Error>> {
     stream.readable().await?;
     let mut buf = vec![0; 2048];
     match stream.try_read(&mut buf) {
