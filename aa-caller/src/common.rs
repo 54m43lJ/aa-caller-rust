@@ -31,3 +31,7 @@ pub enum ProfStatus {
 pub trait Handler {
     fn handle(&self) -> Result<(), Box<dyn Error>>;
 }
+
+pub trait AsyncHandler {
+    async fn handle(&self) -> Result<(), Box<dyn Error>>;
+}

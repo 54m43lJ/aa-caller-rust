@@ -1,6 +1,6 @@
-use std::{error::Error, fs::{self, File}, io::Write, path::PathBuf, process::Command};
-
-use crate::{common::{Call, Handler, ProfStatus, ProfileOp}, LOG_FILES};
+use std::{error::Error, fs, path::{Path, PathBuf}};
+use tokio::net::{UnixListener, UnixStream};
+use crate::{command::{get_logs, get_status, get_unconfined, profile_load, profile_set}, common::{AsyncHandler, Call, Handler, ProfStatus, ProfileOp}, LOG_FILES};
 
 pub struct Server {
     pub call :Call
@@ -9,17 +9,23 @@ pub struct Server {
 struct ProfileServer {
     op :ProfileOp
 }
-impl Handler for Server{
-    fn handle(&self) -> Result<(), Box<dyn Error>> {
+
+impl AsyncHandler for Server {
+    async fn handle(&self) -> Result<(), Box<dyn Error>> {
         match &self.call {
-            Call::None => {}
-            Call::Daemon => {}
-            Call::Logs => {
-                let log = get_logs(&LOG_FILES)?;
-                println!("{}", String::from_utf8(log)?);
+            Call::None => {
+                listen().await?;
             }
-            Call::Status => {}
-            Call::Unconfined => {}
+            Call::Daemon => { listen().await? }
+            Call::Logs => {
+                // let log = get_logs(&LOG_FILES);
+            }
+            Call::Status => {
+                // let buf = get_status();
+            }
+            Call::Unconfined => {
+                // let buf = get_unconfined();
+            }
             Call::Profile(op) => {
                 ProfileServer{ op :op.clone() }.handle()?;
             }
@@ -33,55 +39,99 @@ impl Handler for ProfileServer {
         match &self.op {
             ProfileOp::Load(profile) => {
                 let path = PathBuf::try_from(profile)?;
-                let buf = fs::read(&path)?;
-                let mut target = PathBuf::from("/etc/apparmor.d/");
-                target.push(path.file_name().unwrap());
-                let mut ftarget = File::create(&target)?;
-                ftarget.write_all(&buf[..])?;
-                Command::new("apparmor_parser")
-                    .args(["-r", target.to_str().unwrap()])
-                    .output().expect("Command failed!");
+                profile_load(&path);
             }
             ProfileOp::Disable(profile) => {
-                Command::new("aa-disable")
-                    .arg(profile)
-                    .output().expect("Command failed!");
+                profile_set(profile, ProfStatus::Disabled);
             }
             ProfileOp::Status(profile, status) => {
-                match status {
-                    ProfStatus::Audit => {
-                        Command::new("aa-audit")
-                            .arg(profile)
-                            .output().expect("Command failed!");
-                    }
-                    ProfStatus::Complain => {
-                        Command::new("aa-complain")
-                            .arg(profile)
-                            .output().expect("Command failed!");
-                    }
-                    ProfStatus::Disabled => {
-                        Command::new("aa-disable")
-                            .arg(profile)
-                            .output().expect("Command failed!");
-                    }
-                    ProfStatus::Enforce => {
-                        Command::new("aa-enforce")
-                            .arg(profile)
-                            .output().expect("Command failed!");
-                    }
-                }
+                profile_set(profile, status.clone());
             }
         }
         Ok(())
     }
 }
 
-/// fetch logs from a kernel log file
-fn get_logs(files :&[&str]) -> Result<Vec<u8>, Box<dyn Error>> {
-    let mut output :Vec<u8> = Vec::new();
-    for f in files {
-        let mut buf = fs::read(f)?;
-        output.append(&mut buf);
+async fn listen() -> Result<(), Box<dyn Error>> {
+    let runtime_path = Path::new("/tmp/aa-caller");
+    let socket_path = Path::join(runtime_path, "socket");
+
+    match fs::create_dir(&runtime_path) {
+        Ok(_) => {}
+        Err(_e) => {
+            // eprintln!("File error: {}", _e);
+        }
     }
-    Ok(output)
+
+    match fs::remove_file(&socket_path) {
+        Ok(_) => {}
+        Err(_e) => {
+            // eprintln!("File error: {}", _e);
+        }
+    }
+
+    let socket = UnixListener::bind(socket_path).unwrap();
+    loop {
+        match socket.accept().await {
+            Ok((stream,_addr)) => {
+                // _debug_stream(stream).await?;
+                process(stream).await?;
+            }
+            Err(e) => {
+                eprintln!("Failed to establish connection: {}", e);
+            }
+        }
+    }
+}
+
+async fn process(stream: UnixStream) -> Result<(), Box<dyn Error>> {
+    stream.readable().await?;
+    let mut buf = vec![0; 2048];
+    match stream.try_read(&mut buf) {
+        Ok(0) => {
+        }
+        Ok(n) => {
+            buf.truncate(n);
+            let req = String::from_utf8(buf).unwrap();
+            let output = match req.as_str() {
+                "logs" => get_logs(&LOG_FILES),
+                "status" => get_status(),
+                "unconfined" => get_unconfined(),
+                _ => { Vec::<u8>::new() }
+            };
+            stream_write(&stream, output).await?;
+        }
+        Err(_e) => {}
+    }
+    Ok(())
+}
+
+/// write any slice of byte string to the stream
+async fn stream_write(stream :&UnixStream, content :Vec<u8>) -> Result<(), Box<dyn Error>> {
+    stream.writable().await?;
+    loop {
+        match stream.try_write(&content[..]) {
+            Ok(_n) => {
+                // println!("sent {} bytes of data :\n {}", n, String::from_utf8(content)?);
+                break;
+            }
+            Err(_e) => { continue; }
+        }
+    }
+    Ok(())
+}
+
+async fn _debug_stream(stream: &UnixStream) -> Result<(), Box<dyn Error>> {
+    stream.readable().await?;
+    let mut buf = vec![0; 2048];
+    match stream.try_read(&mut buf) {
+        Ok(0) => {}
+        Ok(n) => {
+            buf.truncate(n);
+            let output = String::from_utf8(buf).unwrap();
+            println!("{}", output);
+        }
+        Err(_e) => {}
+    }
+    Ok(())
 }

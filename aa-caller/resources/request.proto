@@ -1,0 +1,35 @@
+syntax = "proto3";
+
+package aa-caller.request;
+
+message Request {
+    Call call = 1
+}
+
+message ProfileReq {
+    ProfileOp op = 1,
+    ProfileSt status = 2
+}
+
+enum Call {
+    NONE = 0,
+    DAEMON = 1,
+    LOGS = 2,
+    STATUS = 3,
+    UNCONFINED = 4,
+    PROFILE = 5
+}
+
+enum ProfileOp {
+    NONE = 0,
+    LOAD = 1,
+    DISABLE = 2,
+    STATUS = 3
+}
+
+enum ProfStatus {
+    DISABLED = 0,
+    AUDIT = 1,
+    COMPLAIN = 2,
+    ENFORCE = 3
+}

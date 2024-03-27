@@ -1,5 +1,5 @@
-use std::{error::Error, fs::{self, File}, io::Write, path::PathBuf, process::Command};
-use crate::common::{Call, Handler, ProfStatus, ProfileOp, LOG_FILES};
+use std::{error::Error, path::PathBuf};
+use crate::{command::{get_logs, get_status, get_unconfined, profile_load, profile_set}, common::{Call, Handler, ProfStatus, ProfileOp, LOG_FILES}};
 
 pub struct Caller {
     pub call :Call
@@ -15,11 +15,17 @@ impl Handler for Caller {
             Call::None => {}
             Call::Daemon => { eprintln!("How do you even get here?"); }
             Call::Logs => {
-                let log = get_logs(&LOG_FILES)?;
+                let log = get_logs(&LOG_FILES);
                 println!("{}", String::from_utf8(log)?);
             }
-            Call::Status => {}
-            Call::Unconfined => {}
+            Call::Status => {
+                let buf = get_status();
+                println!("{}", String::from_utf8(buf)?);
+            }
+            Call::Unconfined => {
+                let buf = get_unconfined();
+                println!("{}", String::from_utf8(buf)?);
+            }
             Call::Profile(op) => {
                 ProfileCaller{ op :op.clone() }.handle()?;
             }
@@ -33,55 +39,15 @@ impl Handler for ProfileCaller {
         match &self.op {
             ProfileOp::Load(profile) => {
                 let path = PathBuf::try_from(profile)?;
-                let buf = fs::read(&path)?;
-                let mut target = PathBuf::from("/etc/apparmor.d/");
-                target.push(path.file_name().unwrap());
-                let mut ftarget = File::create(&target)?;
-                ftarget.write_all(&buf[..])?;
-                Command::new("apparmor_parser")
-                    .args(["-r", target.to_str().unwrap()])
-                    .output().expect("Command failed!");
+                profile_load(&path);
             }
             ProfileOp::Disable(profile) => {
-                Command::new("aa-disable")
-                    .arg(profile)
-                    .output().expect("Command failed!");
+                profile_set(profile, ProfStatus::Disabled);
             }
             ProfileOp::Status(profile, status) => {
-                match status {
-                    ProfStatus::Audit => {
-                        Command::new("aa-audit")
-                            .arg(profile)
-                            .output().expect("Command failed!");
-                    }
-                    ProfStatus::Complain => {
-                        Command::new("aa-complain")
-                            .arg(profile)
-                            .output().expect("Command failed!");
-                    }
-                    ProfStatus::Disabled => {
-                        Command::new("aa-disable")
-                            .arg(profile)
-                            .output().expect("Command failed!");
-                    }
-                    ProfStatus::Enforce => {
-                        Command::new("aa-enforce")
-                            .arg(profile)
-                            .output().expect("Command failed!");
-                    }
-                }
+                profile_set(profile, status.clone());
             }
         }
         Ok(())
     }
-}
-
-/// fetch logs from a kernel log file
-fn get_logs(files :&[&str]) -> Result<Vec<u8>, Box<dyn Error>> {
-    let mut output :Vec<u8> = Vec::new();
-    for f in files {
-        let mut buf = fs::read(f)?;
-        output.append(&mut buf);
-    }
-    Ok(output)
 }
