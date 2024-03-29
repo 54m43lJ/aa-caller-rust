@@ -34,14 +34,7 @@ struct Opts {
     unconfined :bool,
 
     #[command(subcommand)]
-    action :Option<Action>
-}
-
-// socket mode
-#[derive(Subcommand)]
-enum Action {
-    Daemon,
-    Logs
+    action :Option<Call>
 }
 
 static LOG_FILES :[&str; 1] = ["/var/log/audit/audit.log"];
@@ -54,10 +47,10 @@ async fn main() -> Result<(), Box<dyn Error>> {
         // does nothing by default
         let mut server = Server{ call :Call::None};
         match action {
-            Action::Daemon => {
+            Call::Daemon => {
                 server.call = Call::Daemon;
             }
-            Action::Logs => {
+            Call::Logs => {
                 server.call = Call::Logs;
             }
         };
@@ -74,24 +67,11 @@ async fn main() -> Result<(), Box<dyn Error>> {
             caller.call = Call::Unconfined;
         } else if let Some(profile) = opts.profile {
             if opts.prof_load {
-                caller.call = Call::Profile(ProfileOp::Load(profile));
+                caller.call = Call::Profile(ProfileOp::Load);
             } else if opts.prof_disable {
-                caller.call = Call::Profile(ProfileOp::Disable(profile));
+                caller.call = Call::Profile(ProfileOp::Disable);
             } else if let Some(status) = opts.prof_status {
-                match status {
-                    ProfStatus::Audit => {
-                        caller.call = Call::Profile(ProfileOp::Status(profile, ProfStatus::Audit));
-                    }
-                    ProfStatus::Complain => {
-                        caller.call = Call::Profile(ProfileOp::Status(profile, ProfStatus::Complain));
-                    }
-                    ProfStatus::Disabled => {
-                        caller.call = Call::Profile(ProfileOp::Status(profile, ProfStatus::Disabled));
-                    }
-                    ProfStatus::Enforce => {
-                        caller.call = Call::Profile(ProfileOp::Status(profile, ProfStatus::Enforce));
-                    }
-                }
+                caller.call = Call::Profile();
             }
         // or just listen
         } else {

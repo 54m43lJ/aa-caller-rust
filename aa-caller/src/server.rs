@@ -1,6 +1,17 @@
-use std::{error::Error, fs, path::{Path, PathBuf}};
+use std::{error::Error, fs, io::{Cursor, Read}, path::{Path, PathBuf}};
 use tokio::net::{UnixListener, UnixStream};
 use crate::{command::{get_logs, get_status, get_unconfined, profile_load, profile_set}, common::{AsyncHandler, Call, Handler, ProfStatus, ProfileOp}, LOG_FILES};
+use prost::Message;
+use self::protos::{request, profile};
+
+pub mod protos {
+    pub mod request {
+        include!(concat!(env!("OUT_DIR"), "/protos.request.rs"));
+    }
+    pub mod profile {
+        include!(concat!(env!("OUT_DIR"), "/protos.profile.rs"));
+    }
+}
 
 pub struct Server {
     pub call :Call
@@ -84,32 +95,57 @@ async fn listen() -> Result<(), Box<dyn Error>> {
     }
 }
 
+/// translate request into function calls
 async fn process(stream: UnixStream) -> Result<(), Box<dyn Error>> {
-    stream.readable().await?;
-    let mut buf = vec![0; 2048];
-    match stream.try_read(&mut buf) {
-        Ok(0) => {
-        }
-        Ok(n) => {
-            buf.truncate(n);
-            let req = String::from_utf8(buf).unwrap();
-            let output = match req.as_str() {
-                "logs" => get_logs(&LOG_FILES),
-                "status" => get_status(),
-                "unconfined" => get_unconfined(),
-                _ => { Vec::<u8>::new() }
+    let req = request::Request::decode(
+        &mut Cursor::new(stream_read(&stream).await?))?;
+    let output = match request::Call::try_from(req.call) {
+        Ok(request::Call::Daemon) => get_logs(&LOG_FILES),
+        Ok(request::Call::Logs) => get_logs(&LOG_FILES),
+        Ok(request::Call::Status) => get_status(),
+        Ok(request::Call::Unconfined) => get_unconfined(),
+        Ok(request::Call::Profile) => {
+            let req_p = profile::ProfileReq::decode(
+                &mut Cursor::new(stream_read(&stream).await?)
+            )?;
+            match profile::ProfileOp::try_from(req_p.op) {
+                Ok(profile::ProfileOp::Load) => {
+
+                }
+                Ok(profile::ProfileOp::Status) => {}
+                Ok(profile::ProfileOp::Disable) => {}
+                Err(_) => {}
             };
-            stream_write(&stream, output).await?;
+            Vec::<u8>::new()
         }
-        Err(_e) => {}
-    }
+        Err(_) => { Vec::<u8>::new() }
+    };
+    stream_write(&stream, output).await?;
     Ok(())
+}
+
+/// read everything from stream & compile together
+async fn stream_read(stream :&UnixStream) -> Result<Vec<u8>, Box<dyn Error>> {
+    let mut output = Vec::<u8>::new();
+    let mut buf = vec![0; 2048];
+    loop {
+        stream.readable().await?;
+        match stream.try_read(&mut buf) {
+            Ok(0) => { break; }
+            Ok(n) => {
+                buf.truncate(n);
+                output.append(&mut buf);
+            }
+            Err(_) => { continue; }
+        }
+    }
+    Ok(output)
 }
 
 /// write any slice of byte string to the stream
 async fn stream_write(stream :&UnixStream, content :Vec<u8>) -> Result<(), Box<dyn Error>> {
-    stream.writable().await?;
     loop {
+        stream.writable().await?;
         match stream.try_write(&content[..]) {
             Ok(_n) => {
                 // println!("sent {} bytes of data :\n {}", n, String::from_utf8(content)?);

@@ -1,23 +1,36 @@
 use std::error::Error;
 
-use clap::ValueEnum;
+use clap::{Args, Subcommand, ValueEnum};
+
+use crate::command;
 
 pub static LOG_FILES :[&str; 1] = ["/var/log/audit/audit.log"];
 
+#[derive(Subcommand)]
 pub enum Call {
     None,
     Daemon,
     Logs,
     Status,
     Unconfined,
-    Profile(ProfileOp)
+    Profile(ProfileArgs)
 }
 
-#[derive(Clone)]
+#[derive(Args)]
+struct ProfileArgs {
+    #[arg(index=1)]
+    profile :String,
+    #[command(subcommand)]
+    op :ProfileOp,
+    #[arg(short)]
+    status :ProfStatus
+}
+
+#[derive(Subcommand)]
 pub enum ProfileOp {
-    Load(String),
-    Disable(String),
-    Status(String, ProfStatus)
+    Load,
+    Disable,
+    Status
 }
 
 #[derive(Clone, ValueEnum)]

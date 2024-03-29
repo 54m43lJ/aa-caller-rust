@@ -1,0 +1,21 @@
+syntax = "proto3";
+
+package protos.profile;
+
+message ProfileReq {
+    ProfileOp op = 1;
+    ProfStatus status = 2;
+}
+
+enum ProfileOp {
+    LOAD = 0;
+    DISABLE = 1;
+    STATUS = 2;
+}
+
+enum ProfStatus {
+    DISABLED = 0;
+    AUDIT = 1;
+    COMPLAIN = 2;
+    ENFORCE = 3;
+}

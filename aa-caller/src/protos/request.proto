@@ -1,0 +1,15 @@
+syntax = "proto3";
+
+package protos.request;
+
+message Request {
+    Call call = 1;
+}
+
+enum Call {
+    DAEMON = 0;
+    PROFILE = 1;
+    LOGS = 2;
+    STATUS = 3;
+    UNCONFINED = 4;
+}
