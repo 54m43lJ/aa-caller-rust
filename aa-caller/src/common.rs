@@ -2,11 +2,9 @@ use std::error::Error;
 
 use clap::{Args, Subcommand, ValueEnum};
 
-use crate::command;
-
 pub static LOG_FILES :[&str; 1] = ["/var/log/audit/audit.log"];
 
-#[derive(Subcommand)]
+#[derive(Clone, Subcommand)]
 pub enum Call {
     None,
     Daemon,
@@ -16,17 +14,17 @@ pub enum Call {
     Profile(ProfileArgs)
 }
 
-#[derive(Args)]
-struct ProfileArgs {
+#[derive(Clone, Args)]
+pub struct ProfileArgs {
     #[arg(index=1)]
-    profile :String,
+    pub profile :String,
     #[command(subcommand)]
-    op :ProfileOp,
-    #[arg(short)]
-    status :ProfStatus
+    pub op :ProfileOp,
+    #[arg(short='t')]
+    pub status :Option<ProfStatus>
 }
 
-#[derive(Subcommand)]
+#[derive(Clone, Subcommand)]
 pub enum ProfileOp {
     Load,
     Disable,
@@ -42,9 +40,9 @@ pub enum ProfStatus {
 }
 
 pub trait Handler {
-    fn handle(&self) -> Result<(), Box<dyn Error>>;
+    fn handle(self) -> Result<(), Box<dyn Error>>;
 }
 
 pub trait AsyncHandler {
-    async fn handle(&self) -> Result<(), Box<dyn Error>>;
+    async fn handle(self) -> Result<(), Box<dyn Error>>;
 }

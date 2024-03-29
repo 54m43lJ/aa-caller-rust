@@ -1,8 +1,8 @@
-use std::{error::Error, fs, io::{Cursor, Read}, path::{Path, PathBuf}};
+use std::{error::Error, fs, io::Cursor, path::{Path, PathBuf}};
 use tokio::net::{UnixListener, UnixStream};
-use crate::{command::{get_logs, get_status, get_unconfined, profile_load, profile_set}, common::{AsyncHandler, Call, Handler, ProfStatus, ProfileOp}, LOG_FILES};
+use crate::{command::{get_logs, get_status, get_unconfined, profile_load, profile_set}, common::{AsyncHandler, Call, Handler, ProfStatus, ProfileArgs, ProfileOp}, LOG_FILES};
 use prost::Message;
-use self::protos::{request, profile};
+use self::protos::{profile, request};
 
 pub mod protos {
     pub mod request {
@@ -18,12 +18,12 @@ pub struct Server {
 }
 
 struct ProfileServer {
-    op :ProfileOp
+    args :ProfileArgs
 }
 
 impl AsyncHandler for Server {
-    async fn handle(&self) -> Result<(), Box<dyn Error>> {
-        match &self.call {
+    async fn handle(self) -> Result<(), Box<dyn Error>> {
+        match self.call {
             Call::None => {
                 listen().await?;
             }
@@ -37,8 +37,8 @@ impl AsyncHandler for Server {
             Call::Unconfined => {
                 // let buf = get_unconfined();
             }
-            Call::Profile(op) => {
-                ProfileServer{ op :op.clone() }.handle()?;
+            Call::Profile(args) => {
+                ProfileServer{ args }.handle()?;
             }
         }
         Ok(())
@@ -46,17 +46,21 @@ impl AsyncHandler for Server {
 }
 
 impl Handler for ProfileServer {
-    fn handle(&self) -> Result<(), Box<dyn Error>> {
-        match &self.op {
-            ProfileOp::Load(profile) => {
+    fn handle(self) -> Result<(), Box<dyn Error>> {
+        match self.args {
+            ProfileArgs { profile, op: ProfileOp::Load, status: None } => {
                 let path = PathBuf::try_from(profile)?;
                 profile_load(&path);
             }
-            ProfileOp::Disable(profile) => {
-                profile_set(profile, ProfStatus::Disabled);
+            ProfileArgs { profile, op: ProfileOp::Disable, status: None } => {
+                profile_set(&profile, ProfStatus::Disabled);
             }
-            ProfileOp::Status(profile, status) => {
-                profile_set(profile, status.clone());
+            ProfileArgs { profile, op: ProfileOp::Load, status: Some(status) } => {
+                profile_set(&profile, status);
+            }
+            _ => {
+                // malformed request
+                eprintln!("How do you even get here?");
             }
         }
         Ok(())

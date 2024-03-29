@@ -1,8 +1,8 @@
 use std::error::Error;
 use caller::Caller;
 use server::Server;
-use clap::{Parser, Subcommand};
-use common::{AsyncHandler, Call, Handler, ProfStatus, ProfileOp};
+use clap::Parser;
+use common::{AsyncHandler, Call, Handler, ProfStatus, ProfileArgs, ProfileOp};
 
 mod caller;
 mod server;
@@ -45,15 +45,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
     // let Server handle it
     if let Some(action) = opts.action {
         // does nothing by default
-        let mut server = Server{ call :Call::None};
-        match action {
-            Call::Daemon => {
-                server.call = Call::Daemon;
-            }
-            Call::Logs => {
-                server.call = Call::Logs;
-            }
-        };
+        let server = Server{ call :action };
         server.handle().await?;
     // let Caller handle it
     } else {
@@ -67,15 +59,16 @@ async fn main() -> Result<(), Box<dyn Error>> {
             caller.call = Call::Unconfined;
         } else if let Some(profile) = opts.profile {
             if opts.prof_load {
-                caller.call = Call::Profile(ProfileOp::Load);
+                caller.call = Call::Profile(ProfileArgs{ profile, op: ProfileOp::Load, status: None });
             } else if opts.prof_disable {
-                caller.call = Call::Profile(ProfileOp::Disable);
+                caller.call = Call::Profile(ProfileArgs { profile, op: ProfileOp::Disable, status: None });
             } else if let Some(status) = opts.prof_status {
-                caller.call = Call::Profile();
+                caller.call = Call::Profile(ProfileArgs { profile, op: ProfileOp::Status, status: Some(status) });
             }
         // or just listen
         } else {
-            // listen().await?;
+            let server = Server{ call :Call::None };
+            server.handle().await?;
         }
         caller.handle()?;
     }

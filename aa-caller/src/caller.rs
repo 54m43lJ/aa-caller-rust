@@ -1,17 +1,17 @@
 use std::{error::Error, path::PathBuf};
-use crate::{command::{get_logs, get_status, get_unconfined, profile_load, profile_set}, common::{Call, Handler, ProfStatus, ProfileOp, LOG_FILES}};
+use crate::{command::{get_logs, get_status, get_unconfined, profile_load, profile_set}, common::{Call, Handler, ProfStatus, ProfileArgs, ProfileOp, LOG_FILES}};
 
 pub struct Caller {
     pub call :Call
 }
 
 struct ProfileCaller {
-    op : ProfileOp
+    args :ProfileArgs
 }
 
 impl Handler for Caller {
-    fn handle(&self) -> Result<(), Box<dyn Error>> {
-        match &self.call {
+    fn handle(self) -> Result<(), Box<dyn Error>> {
+        match self.call {
             Call::None => {}
             Call::Daemon => { eprintln!("How do you even get here?"); }
             Call::Logs => {
@@ -26,8 +26,8 @@ impl Handler for Caller {
                 let buf = get_unconfined();
                 println!("{}", String::from_utf8(buf)?);
             }
-            Call::Profile(op) => {
-                ProfileCaller{ op :op.clone() }.handle()?;
+            Call::Profile(args) => {
+                ProfileCaller{ args }.handle()?;
             }
         }
         Ok(())
@@ -35,17 +35,21 @@ impl Handler for Caller {
 }
 
 impl Handler for ProfileCaller {
-    fn handle(&self) -> Result<(), Box<dyn Error>> {
-        match &self.op {
-            ProfileOp::Load(profile) => {
+    fn handle(self) -> Result<(), Box<dyn Error>> {
+        match self.args {
+            ProfileArgs { profile, op: ProfileOp::Load, status: None } => {
                 let path = PathBuf::try_from(profile)?;
                 profile_load(&path);
             }
-            ProfileOp::Disable(profile) => {
-                profile_set(profile, ProfStatus::Disabled);
+            ProfileArgs { profile, op: ProfileOp::Disable, status: None } => {
+                profile_set(&profile, ProfStatus::Disabled);
             }
-            ProfileOp::Status(profile, status) => {
-                profile_set(profile, status.clone());
+            ProfileArgs { profile, op: ProfileOp::Load, status: Some(status) } => {
+                profile_set(&profile, status);
+            }
+            _ => {
+                // malformed request
+                eprintln!("How do you even get here?");
             }
         }
         Ok(())
